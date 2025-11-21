@@ -20,6 +20,11 @@ BulletTrade 是一套兼容聚宽 API 的量化研究与交易框架，支持多
 - GitHub 仓库 https://github.com/BulletTrade/bullet-trade 
 - 官方站点 https://bullettrade.cn/
 
+## 风险与声明
+- 量化及实盘有市场与系统风险，任何策略/软件均不保证收益,软件不可避免有BUG,请先小额或模拟验证，自行承担交易风险。
+- TuShare 数据源受测试账号权限限制，覆盖不完全，欢迎补充测试与提交 PR 完善。
+- 目前示例策略以量价数据为主，若需要财务/基本面等扩展，建议先在聚宽模拟环境调用，再通过 qmt server 完成下单。
+
 
 ## 一键安装与环境准备
 
