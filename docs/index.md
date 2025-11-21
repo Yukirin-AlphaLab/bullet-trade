@@ -7,13 +7,14 @@ BulletTrade 是一套兼容聚宽 API 的量化研究与交易框架，支持多
 </p>
 
 ## index
+- [快速上手](quickstart.md)：三步跑通回测/实盘，聚宽策略无改直接复用。
+- [配置总览](config.md)：回测/本地实盘/远程实盘/聚宽接入的环境变量一览。
 - [回测引擎](backtest.md)：真实价格成交、分红送股处理、聚宽代码示例与 CLI 回测。
 - [实盘引擎](live.md)：本地 QMT 独立实盘与远程实盘流程。
 - [交易支撑](trade-support.md)：聚宽模拟盘接入、远程 QMT 服务与 helper 用法。
-- [扩展能力](quickstart.md)：数据/交易提供者设计理念与扩展指引。
+- [QMT 服务配置](qmt-server.md)：bullet-trade server 的完整说明。
 - [数据源指南](data/DATA_PROVIDER_GUIDE.md)：聚宽、MiniQMT、Tushare 以及自定义 Provider 配置。
 - [API 文档](api.md)：策略可用 API、类模型与工具函数。
-- [QMT 服务配置](qmt-server.md)：bullet-trade server 的完整说明。
 
 **链接**：
 - GitHub 仓库 https://github.com/BulletTrade/bullet-trade 
@@ -25,7 +26,10 @@ BulletTrade 是一套兼容聚宽 API 的量化研究与交易框架，支持多
 - 推荐使用 Python 3.10+ 并创建虚拟环境：
   ```bash
   python -m venv .venv
+  # macos/linux
   source .venv/bin/activate
+  # windows
+  .venv\Scripts\activate.bat
   ```
 - 一键安装：
   ```bash

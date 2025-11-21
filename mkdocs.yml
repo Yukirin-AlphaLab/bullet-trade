@@ -7,10 +7,11 @@ use_directory_urls: false
 nav:
   - 官方首页: /
   - 文档首页: index.md
+  - 快速上手: quickstart.md
+  - 配置总览: config.md
   - 回测引擎: backtest.md
   - 实盘引擎: live.md
   - 交易支撑: trade-support.md
-  - 扩展能力: quickstart.md
   - API 文档: api.md
   - 数据源:
       - 数据源指南: data/DATA_PROVIDER_GUIDE.md

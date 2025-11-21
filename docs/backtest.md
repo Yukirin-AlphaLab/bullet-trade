@@ -1,42 +1,30 @@
 # 回测引擎
 
-一站式说明如何配置数据源、编写兼容聚宽的策略，并用 CLI 跑出可落盘的回测结果/报告。
+如何在本地快速跑通与聚宽对齐的回测，落盘报告并校验指标。
 
-## 环境与安装
-
+## 最短路径（3 步）
+1) 安装与模板：
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e bullet-trade[dev]
+pip install -e "bullet-trade[dev]"
 cp env.backtest.example .env
 ```
-
-数据源通用变量（写入 `.env`）：
-
+2) 只填本页用到的变量（其余见 [配置总览](config.md)）：
 ```bash
-# 数据源类型 (jqdata, tushare, qmt)
-DEFAULT_DATA_PROVIDER=jqdata
-
-# 聚宽配置
-JQDATA_USERNAME=your_username
+DEFAULT_DATA_PROVIDER=jqdata         # 必填，行情源
+JQDATA_USERNAME=your_username       # 选填，按数据源需要
 JQDATA_PASSWORD=your_password
-JQDATA_CACHE_DIR=~/.bullet-trade/cache/jq_cache/
-
-# 本地 MiniQMT
-MINIQMT_AUTO_DOWNLOAD=true
-MINIQMT_CACHE_DIR=~/.bullet-trade/cache/miniqmt_cache
-QMT_ACCOUNT_ID=1234567890
-QMT_ACCOUNT_TYPE=stock
-
-# 远程 QMT server
-QMT_SERVER_HOST=10.0.0.8
-QMT_SERVER_PORT=58620
-QMT_SERVER_TOKEN=secret
-
-# Tushare（可选）
-# DEFAULT_DATA_PROVIDER=tushare
-TUSHARE_TOKEN=your_token
-TUSHARE_CACHE_DIR=~/.bullet-trade/cache/tushare_cache
 ```
+3) 运行回测：
+```bash
+bullet-trade backtest strategies/demo_strategy.py \
+  --start 2024-01-01 --end 2024-06-30 \
+  --benchmark 000300.XSHG \
+  --cash 100000 \
+  --output backtest_results/demo
+```
+
+> 聚宽策略可直接复用：`from jqdata import *`、`order_target_value` 等 API 已兼容，无需改代码。
 
 ## 推荐设置：真实价格 + 分红送股
 
@@ -70,14 +58,6 @@ def market_open(context):
 
 ## 使用 CLI 运行回测
 
-```bash
-bullet-trade backtest strategies/demo_strategy.py \
-  --start 2024-01-01 --end 2024-06-30 \
-  --benchmark 000300.XSHG \
-  --cash 100000 \
-  --output backtest_results/demo
-```
-
 常用开关：
 
 | 功能 | 参数 | 默认 | 说明 |
@@ -102,5 +82,6 @@ bullet-trade backtest strategies/demo_strategy.py \
 ## 常见问题
 
 - **中文字体**：首次生成图片会自动配置中文字体，确保系统存在任意中文字体即可。
-- **数据认证失败**：检查 `.env` 中的账号/Token 或环境变量覆盖。
+- **数据认证失败**：检查 `.env` 中的账号/Token 或环境变量覆盖，参考 [配置总览](config.md)。
+- **分钟线**：确认数据源支持分钟线，且策略设置 `use_real_price=True`。
 - **日志为空**：若未指定 `--log` 且又使用了 `--no-logs`，不会写入文件。
