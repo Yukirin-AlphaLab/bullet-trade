@@ -189,6 +189,12 @@ class BacktestEngine:
             set_benchmark, set_order_cost, set_slippage, set_option,
             OrderCost, FixedSlippage
         )
+        from .api import (
+            subscribe as _subscribe,
+            unsubscribe as _unsubscribe,
+            unsubscribe_all as _unsubscribe_all,
+            get_current_tick as _get_current_tick,
+        )
         from .orders import order, order_value, order_target, order_target_value
         from .scheduler import run_daily, run_weekly, run_monthly, unschedule_all
         from ..data import api as wrapped_api
@@ -224,7 +230,13 @@ class BacktestEngine:
         module.set_option = set_option
         module.OrderCost = OrderCost
         module.FixedSlippage = FixedSlippage
-        
+
+        # Tick 订阅 API
+        module.subscribe = _subscribe
+        module.unsubscribe = _unsubscribe
+        module.unsubscribe_all = _unsubscribe_all
+        module.get_current_tick = _get_current_tick
+
         # 注入订单函数
         module.order = order
         module.order_value = order_value
@@ -317,6 +329,11 @@ class BacktestEngine:
         jq_mod.run_weekly = run_weekly
         jq_mod.run_monthly = run_monthly
         jq_mod.unschedule_all = unschedule_all
+        # Tick 订阅 API（聚宽兼容写法）
+        jq_mod.subscribe = _subscribe
+        jq_mod.unsubscribe = _unsubscribe
+        jq_mod.unsubscribe_all = _unsubscribe_all
+        jq_mod.get_current_tick = _get_current_tick
         # 注入并注册
         sys.modules['jqdata'] = jq_mod
         module.jqdata = jq_mod
