@@ -42,6 +42,7 @@ from ..data.api import (
     get_split_dividend,
     set_data_provider, get_data_provider
 )
+from ..research.io import read_file, write_file
 
 # ---- Tick 订阅占位（后续与 QMT 对接完善） ----
 from typing import Union, Sequence, Any, Optional, Set, Callable, Dict

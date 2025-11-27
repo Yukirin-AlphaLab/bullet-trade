@@ -57,6 +57,8 @@ __all__ = [
     'get_index_stocks',
     'get_split_dividend',
     'set_data_provider', 'get_data_provider',
+    # 研究文件读写
+    'read_file', 'write_file',
     # Tick 订阅与快照（占位/最小实现）
     'subscribe', 'unsubscribe', 'unsubscribe_all', 'get_current_tick',
 

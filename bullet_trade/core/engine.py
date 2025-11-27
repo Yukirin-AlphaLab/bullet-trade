@@ -210,6 +210,7 @@ class BacktestEngine:
             print_portfolio_info,
             prettytable_print_df,
         )
+        from ..research.io import read_file as _read_file, write_file as _write_file
         import math as _math
         import datetime as _datetime
         import time as _time
@@ -237,6 +238,9 @@ class BacktestEngine:
         module.set_option = set_option
         module.OrderCost = OrderCost
         module.FixedSlippage = FixedSlippage
+        # 研究文件读写
+        module.read_file = _read_file
+        module.write_file = _write_file
 
         # Tick 订阅 API
         module.subscribe = _subscribe
@@ -324,6 +328,9 @@ class BacktestEngine:
         jq_mod.set_option = set_option
         jq_mod.OrderCost = OrderCost
         jq_mod.FixedSlippage = FixedSlippage
+        # 研究文件读写
+        jq_mod.read_file = _read_file
+        jq_mod.write_file = _write_file
         # 订单 API（保持从 jqdata 导入的兼容写法）
         jq_mod.order = order
         jq_mod.order_value = order_value

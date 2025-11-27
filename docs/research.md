@@ -10,6 +10,7 @@ BulletTrade 提供 `bullet-trade lab`/`bullet-trade jupyterlab` 一键启动研�
 - 设置文件：`~/.bullet-trade/setting.json`，可调 `host`、`port`、`root_dir`、`env_path`、`open_browser`、`no_password`、`no_cert`、`token`
 - `.env` 读取顺序：默认仅加载根目录下的 `.env`（不会读取当前工作目录的 `.env`）
 - 默认监听 `127.0.0.1:8088`，开启 Jupyter token，未配置密码/证书；如需公网访问请务必配置密码或证书
+- 研究文件读写：`read_file`/`write_file` 兼容聚宽，路径相对研究根目录；日志会打印相对/绝对路径，便于排查；若未初始化会提示运行 `bullet-trade lab`
 
 运行后会自动打开浏览器：
 ![launcher](assets/jupyter-launcher.png)
@@ -22,6 +23,29 @@ BulletTrade 提供 `bullet-trade lab`/`bullet-trade jupyterlab` 一键启动研�
 
 欢迎样例ipynb
 ![welcome](assets/jupyter-welcome.png)
+
+## 研究文件读写（兼容聚宽）
+- 路径：`read_file(path)` / `write_file(path, content, append=False)` 的 `path` 需为研究根目录的相对路径，根目录来源于 `~/.bullet-trade/setting.json` 的 `root_dir`（无设置文件时默认 `~/bullet-trade`）。日志会打印相对路径与展开的绝对路径，方便确认读写位置。
+- 初始化提示：若尚未创建研究根目录或设置文件，调用时会提示运行 `bullet-trade lab` 完成初始化，并标明预期路径。
+- 写入：`content` 支持 `str`/`bytes`/`bytearray`/`memoryview`，字符串以 UTF-8 编码；`append=True` 追加写入，默认覆盖；父目录不存在时自动创建。
+- 读写越界：绝对路径或试图跳出研究根目录会抛错，错误信息会包含相对与绝对路径。
+- 示例：
+  ```python
+  import io, json
+  from jqdata import read_file, write_file
+
+  # 写入 CSV（覆盖）
+  write_file("logs/out.csv", "a,b\n1,2\n", append=False)
+  # 追加二进制
+  write_file("logs/out.csv", b"3,4\n", append=True)
+  # 读取原始字节并解析
+  data = read_file("logs/out.csv")
+  df = pd.read_csv(io.BytesIO(data))
+
+  # 写入/读取 JSON
+  write_file("data/hs300.json", json.dumps(get_index_stocks("000300.XSHG")))
+  codes = json.loads(read_file("data/hs300.json"))
+  ```
 
 
 ## 常用命令

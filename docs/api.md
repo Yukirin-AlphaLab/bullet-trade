@@ -11,6 +11,7 @@
 - [订单与组合](#orders-portfolio)
 - [行情订阅（Tick）](#tick-subscription)
 - [数据模型](#data-model)
+- [研究文件读写](#research-io)
 - [工具函数与消息](#utils-messages)
 - [CLI 衔接](#cli-bridge)
 
@@ -113,6 +114,20 @@
 - `Portfolio` / `SubPortfolio`：账户与子账户信息，含 `total_value/available_cash/locked_cash/positions` 等；`positions` 为 `{code: Position}`。
 - `Position`：持仓详情，含 `total_amount/closeable_amount/avg_cost/price/value/side` 等，并记录 `today_buy_t1`（T+1 可用数量）。
 - `Order` / `Trade`：委托与成交记录；`OrderStatus`/`OrderStyle` 为枚举；`SecurityUnitData` 为 `current_data` 单标的快照。
+
+## 研究文件读写 {#research-io}
+- `read_file(path)` / `write_file(path, content, append=False)`：兼容聚宽，路径必须是研究根目录下的相对路径。根目录来源于 `~/.bullet-trade/setting.json` 的 `root_dir`（无设置文件时默认 `~/bullet-trade`）；日志会打印相对与绝对路径，便于确认实际读写位置。
+- 写入：`content` 支持 `str`/`bytes`/`bytearray`/`memoryview`，字符串以 UTF-8 编码；`append=True` 追加写入，默认覆盖；父目录自动创建。
+- 越界/绝对路径：会抛出错误并在消息中附带相对与绝对路径。
+- 未初始化提示：当研究根目录或设置文件不存在时，会提示运行 `bullet-trade lab` 初始化研究环境，并标明预期路径。
+- 示例：
+  ```python
+  from jqdata import read_file, write_file
+
+  write_file("data/demo.json", json.dumps({"hello": "world"}))
+  raw = read_file("data/demo.json")
+  assert json.loads(raw) == {"hello": "world"}
+  ```
 
 ## 工具函数与消息 {#utils-messages}
 - `print_portfolio_info(context, top_n=None)`：打印账户收益、现金、前 N 大持仓（按市值排序），样式对齐聚宽 CLI。  
