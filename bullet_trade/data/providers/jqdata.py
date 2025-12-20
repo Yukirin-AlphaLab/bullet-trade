@@ -232,7 +232,7 @@ class JQDataProvider(DataProvider):
             except Exception as exc:
                 if self._is_engine_missing_error(exc):
                     if self._price_engine_supported is not False:
-                        logger.info("检测到 get_price_engine 不可用，使用复权因子回退: %s", exc)
+                        logger.debug("检测到 get_price_engine 不可用，使用复权因子回退: %s", exc)
                     self._price_engine_supported = False
                     return self._manual_prefactor_fallback(
                         kwargs,

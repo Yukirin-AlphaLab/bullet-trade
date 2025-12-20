@@ -1727,21 +1727,47 @@ class BacktestEngine:
             )
             
             if not df.empty:
+                long_df = None
+                if ('code' in df.columns) and ('close' in df.columns):
+                    long_df = df
+                elif isinstance(df.columns, pd.MultiIndex):
+                    try:
+                        level1 = list(df.columns.get_level_values(1))
+                        if ('code' in level1) and ('close' in level1):
+                            long_df = df.copy()
+                            long_df.columns = long_df.columns.get_level_values(1)
+                    except Exception:
+                        long_df = None
                 # 取最后一行（最新数据）
                 last_row = df.iloc[-1]
                 
                 # 更新每个标的的价格
                 for security in securities:
                     try:
-                        # 对于单个字段，列名就是标的代码
-                        # 对于多个字段，列名是MultiIndex
-                        if security in df.columns:
-                            close_price = last_row[security]
-                        elif ('close', security) in df.columns:
-                            # MultiIndex格式
-                            close_price = last_row[('close', security)]
+                        close_price = None
+                        if long_df is not None:
+                            # 长表：列包含 time/code/close
+                            if 'code' not in long_df.columns or 'close' not in long_df.columns:
+                                log.error(f"{security} 长表行情列缺失，列={list(long_df.columns)}")
+                                continue
+                            sub = long_df[long_df['code'] == security]
+                            if sub.empty:
+                                log.error(f"{security} 无法在长表行情中找到 close 价格，列={list(long_df.columns)}")
+                                continue
+                            if 'time' in sub.columns:
+                                sub = sub.sort_values('time')
+                            close_price = sub.iloc[-1].get('close')
                         else:
-                            continue
+                            # 对于单个字段，列名就是标的代码
+                            # 对于多个字段，列名是MultiIndex
+                            if security in df.columns:
+                                close_price = last_row[security]
+                            elif ('close', security) in df.columns:
+                                # MultiIndex格式
+                                close_price = last_row[('close', security)]
+                            else:
+                                log.error(f"{security} 无法匹配收盘价列，列={list(df.columns)}")
+                                continue
                         
                         if pd.notna(close_price) and close_price > 0:
                             self.context.portfolio.positions[security].update_price(float(close_price))
