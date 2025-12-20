@@ -1,6 +1,6 @@
 """版本信息"""
 
-__version__ = '0.5.2'
+__version__ = '0.5.3'
 __author__ = 'BulletTrade Team'
 __email__ = 'groundlee@gmail.com'
 __url__ = 'https://github.com/BulletTrade/bullet-trade'
