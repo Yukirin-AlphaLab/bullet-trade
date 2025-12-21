@@ -94,7 +94,7 @@ class TushareProvider(DataProvider):
         self._token = token
         # 支持自定义 API URL
         tushare_custom_url = host or self._tushare_custom_url
-        if tushare_scustom_url:
+        if tushare_custom_url:
             self._pro._DataApi__http_url = tushare_custom_url
             print("使用自定义的URL")
     # ------------------------ K 线数据 ------------------------

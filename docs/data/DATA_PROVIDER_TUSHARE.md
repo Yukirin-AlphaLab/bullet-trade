@@ -6,6 +6,7 @@
 - 依赖 `tushare>=1.2.0`，建议通过 `pip install bullet-trade[tushare]` 一键安装。  
 - 认证优先级：`set_data_provider` 参数 > `.env` 中的 `TUSHARE_TOKEN` > 构造函数传入。  
 - Provider 会在首次调用时自动创建 `ts.pro_api` 客户端，并将 `cache_dir` 设置为 `DATA_CACHE_DIR/tushare`（若配置）。
+- 如需自定义接入点，可在 `.env` 中设置 `TUSHARE_CUSTOM_URL`，或在 `set_data_provider('tushare', tushare_custom_url='...')` 中传入。
 
 ## 价格获取策略
 - 始终获取未复权行情 + 复权因子，自行计算前/后复权并应用 `pre_factor_ref_date`。  

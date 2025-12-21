@@ -19,6 +19,7 @@
 | `DEFAULT_DATA_PROVIDER` | 是 | `jqdata` | 回测行情源 |
 | `JQDATA_USERNAME`/`JQDATA_PASSWORD` | 视数据源 | `your_user`/`your_pwd` | 聚宽数据账号 |
 | `TUSHARE_TOKEN` | 选 | `your_token` | 需 `tushare` 时配置 |
+| `TUSHARE_CUSTOM_URL` | 否 | `http://127.0.0.1:port` | Tushare 自定义接入点 |
 | `MINIQMT_*` | 否 | 见实盘 | 仅当用 `qmt` 做行情源 |
 
 ## 本地实盘（QMT/模拟）
