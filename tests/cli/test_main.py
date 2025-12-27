@@ -1,10 +1,61 @@
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 
 from bullet_trade.cli.main import apply_cli_overrides
 from bullet_trade.core.globals import Logger
+
+
+def test_main_env_file_triggers_refresh(monkeypatch):
+    import bullet_trade.cli.main as main_mod
+    import bullet_trade.utils.env_loader as env_loader
+
+    called = {"load": None, "override": None, "load_calls": 0, "refresh": 0}
+
+    def fake_load_env(env_file=None, override=False):
+        called["load"] = env_file
+        called["override"] = override
+        called["load_calls"] += 1
+
+    def fake_refresh():
+        called["refresh"] += 1
+
+    monkeypatch.setattr(env_loader, "load_env", fake_load_env)
+    monkeypatch.setattr(main_mod, "_refresh_env_dependents", fake_refresh)
+    monkeypatch.setattr(sys, "argv", ["bullet-trade", "--env-file", "custom.env"])
+
+    exit_code = main_mod.main()
+
+    assert exit_code == 0
+    assert called["load"] == "custom.env"
+    assert called["override"] is True
+    assert called["load_calls"] == 1
+    assert called["refresh"] == 1
+
+
+def test_main_without_env_file_skips_refresh(monkeypatch):
+    import bullet_trade.cli.main as main_mod
+    import bullet_trade.utils.env_loader as env_loader
+
+    called = {"load_calls": 0, "refresh": 0}
+
+    def fake_load_env(env_file=None, override=False):
+        called["load_calls"] += 1
+
+    def fake_refresh():
+        called["refresh"] += 1
+
+    monkeypatch.setattr(env_loader, "load_env", fake_load_env)
+    monkeypatch.setattr(main_mod, "_refresh_env_dependents", fake_refresh)
+    monkeypatch.setattr(sys, "argv", ["bullet-trade"])
+
+    exit_code = main_mod.main()
+
+    assert exit_code == 0
+    assert called["load_calls"] == 0
+    assert called["refresh"] == 0
 
 
 def test_apply_cli_overrides_updates_log_dir(tmp_path, monkeypatch):

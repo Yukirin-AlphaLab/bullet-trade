@@ -228,6 +228,62 @@ class Logger:
             std_logger.propagate = False
         except Exception:
             pass
+
+    def reload_from_env(self) -> None:
+        """
+        根据环境变量刷新日志配置。
+        """
+        try:
+            from bullet_trade.utils.env_loader import get_system_config  # type: ignore
+            sys_cfg = get_system_config() or {}
+        except Exception:
+            return
+
+        console_level_name = str(sys_cfg.get('log_level', 'INFO')).upper()
+        console_level = getattr(logging, console_level_name, logging.INFO)
+        file_level_name = str(sys_cfg.get('log_file_level', console_level_name)).upper()
+        file_level = getattr(logging, file_level_name, console_level)
+
+        self.logger.setLevel(min(console_level, file_level))
+        for handler in self.logger.handlers:
+            if self._file_handler and handler is self._file_handler:
+                handler.setLevel(file_level)
+            else:
+                handler.setLevel(console_level)
+
+        log_dir = sys_cfg.get('log_dir') or './logs'
+        if log_dir:
+            try:
+                target_dir = os.path.abspath(os.path.expanduser(log_dir))
+                target_path = os.path.join(target_dir, 'app.log')
+                current_dir = ''
+                if self._file_handler:
+                    current_dir = os.path.dirname(getattr(self._file_handler, 'baseFilename', '') or '')
+                if not self._file_handler or os.path.abspath(current_dir) != target_dir:
+                    os.makedirs(target_dir, exist_ok=True)
+                    fh = RotatingFileHandler(
+                        target_path,
+                        maxBytes=5 * 1024 * 1024,
+                        backupCount=3,
+                        encoding='utf-8',
+                    )
+                    fh.setLevel(file_level)
+                    fh.setFormatter(self._formatter)
+                    if self._file_handler:
+                        try:
+                            self.logger.removeHandler(self._file_handler)
+                        except Exception:
+                            pass
+                        try:
+                            self._file_handler.close()
+                        except Exception:
+                            pass
+                    self.logger.addHandler(fh)
+                    self._file_handler = fh
+            except Exception:
+                pass
+
+        self._sync_standard_logger()
     
     def set_strategy_time(self, dt):
         """设置策略时间（回测时间）"""

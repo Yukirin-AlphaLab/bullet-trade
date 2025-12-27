@@ -46,6 +46,22 @@ def apply_cli_overrides(args, logger: Optional["Logger"] = None) -> Dict[str, st
     return overrides
 
 
+def _refresh_env_dependents() -> None:
+    """
+    刷新依赖环境变量的单例对象。
+    """
+    try:
+        from bullet_trade.data.api import reload_data_provider_from_env
+        reload_data_provider_from_env()
+    except Exception:
+        pass
+    try:
+        from bullet_trade.core.globals import log
+        log.reload_from_env()
+    except Exception:
+        pass
+
+
 def create_parser():
     """创建命令行参数解析器"""
     parser = argparse.ArgumentParser(
@@ -497,6 +513,7 @@ def main():
         if getattr(args, 'env_file', None):
             from bullet_trade.utils.env_loader import load_env  # 延迟导入，避免循环
             load_env(env_file=args.env_file, override=True)
+            _refresh_env_dependents()
     except Exception:
         pass
     overrides = apply_cli_overrides(args) if getattr(args, 'command', None) else {}

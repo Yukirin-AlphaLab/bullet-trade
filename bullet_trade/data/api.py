@@ -140,6 +140,17 @@ def set_data_provider(provider: Union[DataProvider, str], **provider_kwargs) -> 
         _auth_attempted = True
         pass
 
+
+def reload_data_provider_from_env(provider_name: Optional[str] = None) -> None:
+    """
+    根据最新环境变量刷新数据提供者实例。
+    """
+    global _provider, _auth_attempted, _security_info_cache, _cache_forced_off_warned
+    _provider = _create_provider(provider_name=provider_name, overrides=None)
+    _auth_attempted = False
+    _security_info_cache = {}
+    _cache_forced_off_warned = False
+
 def get_data_provider() -> DataProvider:
     """获取当前数据提供者（若未认证则触发一次认证）"""
     _maybe_disable_cache_for_live()
