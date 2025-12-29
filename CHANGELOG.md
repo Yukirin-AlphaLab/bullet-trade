@@ -3,6 +3,29 @@
 本文档记录所有重要的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.8] - 2025-12-29
+
+### 修复
+- **环境变量刷新失效（Fixes #7）**：支持 `.env`/环境变量更新后重载数据源与日志配置，避免配置更新不生效
+
+### 新增
+- **数据接口扩展**：新增 `get_bars/get_ticks/get_current_tick`，支持 `dt/df` 参数与回测兜底；`get_security_info/get_all_securities` 支持按日期查询历史口径
+- **订单查询能力**：`QmtBroker` 新增 `get_open_orders`，仅返回未完成订单并保留原始状态字段
+
+### 增强
+- **交易合规手数规则统一**：下单数量按最小手数+步进取整，买入向下取整、卖出不足最小手数可按可卖余量收尾；不足最小手数直接拒单并返回规则明细
+- **普通股票/创业板规则**：未命中前缀/市场规则时走默认规则，最小 100 股、步进 100
+- **科创板规则**：`68` 前缀最小 200 股、步进 1；**北交所**：BJ/BSE 市场最小 100 股、步进 1；**可转债**：`110/113/118/123/127/128` 前缀最小 10 张、步进 10
+- **市价单合规保护价**：服务端统一计算保护价并裁剪至价格笼子/涨跌停；主板/创业板按 2%/98% + 十档，科创板按 2%/98%，北交所按 5% 或 ±0.1 约束；ETF/B 股最小价差 0.001，A 股按价格分 0.01/0.001
+- **Tushare 复权与数据对齐**：事件复权补齐（分红送转）、交易日对齐与最新交易日兜底，因子缺失自动回退事件复权
+- **QMT 稳定性与可观测性**：请求超时控制、会话日志完善，QMT 同步调用独立线程池避免阻塞
+- **序列化与回测稳定**：QMT dataframe payload 支持 Timestamp/NaT 序列化；回测日报文件动态定位并给出缺失提示
+
+### 测试
+- 新增订单手数规则、open orders、Tushare 复权、QMT payload 序列化、数据源一致性等单元/端到端测试
+
+---
+
 ## [0.5.7] - 2025-12-26
 
 ### 新增
@@ -138,10 +161,10 @@
 - **移除**：已移除的功能
 - **安全**：安全相关的修复
 
+[0.5.8]: https://github.com/BulletTrade/bullet-trade/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/BulletTrade/bullet-trade/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/BulletTrade/bullet-trade/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/BulletTrade/bullet-trade/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/BulletTrade/bullet-trade/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/BulletTrade/bullet-trade/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/BulletTrade/bullet-trade/compare/v0.5.1...v0.5.2
-
