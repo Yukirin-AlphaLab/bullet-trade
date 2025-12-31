@@ -164,8 +164,6 @@ def get_data_provider_config() -> dict:
             'tushare_custom_url': get_env('TUSHARE_CUSTOM_URL'),
         },
         'qmt': {
-            'host': get_env('QMT_HOST', '127.0.0.1'),
-            'port': get_env_int('QMT_PORT', 58610),
             'data_dir': get_env('QMT_DATA_PATH'),
             'auto_download': get_env_optional_bool('MINIQMT_AUTO_DOWNLOAD'),
             'market': get_env('MINIQMT_MARKET'),
@@ -225,13 +223,9 @@ def get_system_config() -> dict:
     # LOG_FILE_LEVEL 未设置时，跟随 LOG_LEVEL
     log_file_level = get_env('LOG_FILE_LEVEL') or log_level
     return {
-        'cache_ttl_days': get_env_int('CACHE_TTL_DAYS', 30),
-        'backtest_output_dir': get_env('BACKTEST_OUTPUT_DIR', './backtest_results'),
         'log_dir': get_env('LOG_DIR', './logs'),
         'log_level': log_level,
         'log_file_level': log_file_level,
-        'max_workers': get_env_int('MAX_WORKERS') or None,
-        'debug': get_env_bool('DEBUG', False),
     }
 
 

@@ -70,13 +70,9 @@ class TestEnvLoader:
     
     def test_get_system_config(self, monkeypatch):
         """测试获取系统配置"""
-        monkeypatch.setenv('CACHE_TTL_DAYS', '60')
         monkeypatch.setenv('LOG_LEVEL', 'DEBUG')
-        monkeypatch.setenv('DEBUG', 'true')
-        
-        config = get_system_config()
-        
-        assert config['cache_ttl_days'] == 60
-        assert config['log_level'] == 'DEBUG'
-        assert config['debug'] is True
 
+        config = get_system_config()
+
+        assert config['log_level'] == 'DEBUG'
+        assert config['log_file_level'] == 'DEBUG'
