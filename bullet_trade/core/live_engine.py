@@ -19,6 +19,7 @@ import inspect
 import unicodedata
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Set, Tuple
+import pandas as pd
 
 from .async_scheduler import AsyncScheduler, OverlapStrategy
 from .event_bus import EventBus
@@ -40,9 +41,11 @@ from .scheduler import (
     get_market_periods,
     parse_market_periods_string,
     get_tasks,
+    get_trade_calendar,
     run_daily,
     run_weekly,
     run_monthly,
+    set_trade_calendar,
     unschedule_all,
 )
 from . import scheduler as sync_scheduler
@@ -205,6 +208,8 @@ class LiveEngine:
         self._pre_open_dt: Optional[datetime] = None
         self._markers_fired: Set[str] = set()
         self._last_schedule_dt: Optional[datetime] = None
+        self._trade_calendar: Dict[date, Dict[str, Any]] = {}
+        self._strategy_start_date: Optional[date] = None
 
         self._tick_symbols: Set[str] = set()
         self._tick_markets: Set[str] = set()
@@ -431,6 +436,21 @@ class LiveEngine:
         self._market_periods = get_market_periods()
         if not self._market_periods:
             raise RuntimeError("未配置交易时段，无法运行实盘")
+        if self.async_scheduler:
+            self.async_scheduler.set_market_periods_resolver(lambda _ref=None: self._market_periods)
+        if self._strategy_start_date is None:
+            self._strategy_start_date = current_date
+        try:
+            provider = get_data_provider()
+            calendar_days = provider.get_trade_days(end_date=current_date, count=180) or []
+            calendar_dates = [pd.to_datetime(d).date() for d in calendar_days]
+            if calendar_dates:
+                set_trade_calendar(calendar_dates, self._strategy_start_date)
+                self._trade_calendar = get_trade_calendar()
+                if self.async_scheduler:
+                    self.async_scheduler.set_trade_calendar(self._trade_calendar)
+        except Exception as exc:
+            log.debug(f"刷新交易日序号日历失败: {exc}")
 
         open_dt = datetime.combine(current_date, self._market_periods[0][0])
         close_dt = datetime.combine(current_date, self._market_periods[-1][1])
@@ -1150,9 +1170,23 @@ class LiveEngine:
             if task.schedule_type.value == 'daily':
                 self.async_scheduler.run_daily(task.func, task.time, strategy)
             elif task.schedule_type.value == 'weekly':
-                self.async_scheduler.run_weekly(task.func, task.weekday, task.time, strategy)
+                self.async_scheduler.run_weekly(
+                    task.func,
+                    task.weekday,
+                    task.time,
+                    task.reference_security,
+                    task.force,
+                    strategy,
+                )
             elif task.schedule_type.value == 'monthly':
-                self.async_scheduler.run_monthly(task.func, task.monthday, task.time, strategy)
+                self.async_scheduler.run_monthly(
+                    task.func,
+                    task.monthday,
+                    task.time,
+                    task.reference_security,
+                    task.force,
+                    strategy,
+                )
 
     def _snapshot_strategy_metadata(self, strategy_hash: Optional[str]) -> None:
         try:

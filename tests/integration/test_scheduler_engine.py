@@ -186,5 +186,5 @@ def test_backtest_engine_weekly_and_monthly(monkeypatch):
         frequency="daily",
     )
 
-    assert [hit.date() for hit in weekly_hits] == [dt.date(2024, 6, 12)]
+    assert [hit.date() for hit in weekly_hits] == [dt.date(2024, 6, 13), dt.date(2024, 6, 17)]
     assert monthly_hits == [dt.datetime(2024, 6, 17, 16, 0)]

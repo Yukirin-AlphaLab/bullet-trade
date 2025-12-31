@@ -11,8 +11,8 @@
 
 import asyncio
 import functools
-from typing import Dict, Any, Optional, Callable, Sequence, Tuple
-from datetime import datetime, time as Time
+from typing import Dict, Any, Optional, Callable, Sequence, Tuple, List
+from datetime import datetime, date, time as Time
 import pandas as pd
 import time as python_time
 
@@ -33,7 +33,13 @@ from .events import (
 from .globals import g, log
 from .settings import get_settings, set_option
 from .orders import get_order_queue
-from .scheduler import generate_daily_schedule, get_market_periods
+from .scheduler import (
+    generate_daily_schedule,
+    get_market_periods,
+    get_trade_calendar,
+    set_trade_calendar,
+)
+from ..data.api import get_data_provider
 from ..data.api import set_current_context, get_data_provider
 
 
@@ -128,6 +134,8 @@ class AsyncBacktestEngine(BacktestEngine):
                     task.func,
                     task.weekday,
                     task.time,
+                    task.reference_security,
+                    task.force,
                     overlap_strategy
                 )
             elif task.schedule_type.value == 'monthly':
@@ -135,6 +143,8 @@ class AsyncBacktestEngine(BacktestEngine):
                     task.func,
                     task.monthday,
                     task.time,
+                    task.reference_security,
+                    task.force,
                     overlap_strategy
                 )
             
@@ -242,6 +252,17 @@ class AsyncBacktestEngine(BacktestEngine):
         # 获取交易日列表
         trade_days = self._get_trade_days()
         log.info(f"交易日数量: {len(trade_days)}")
+        if trade_days:
+            calendar_days = [d.date() for d in trade_days]
+            try:
+                provider = get_data_provider()
+                extra_days = provider.get_trade_days(end_date=trade_days[0], count=60) or []
+                calendar_days.extend(pd.to_datetime(d).date() for d in extra_days)
+            except Exception as exc:
+                log.debug(f"扩展交易日序列失败: {exc}")
+            start_day = pd.to_datetime(self.start_date or trade_days[0]).date()
+            set_trade_calendar(calendar_days, start_day)
+            self._trade_calendar = get_trade_calendar()
         
         # 获取基准数据
         settings = get_settings()
@@ -403,13 +424,27 @@ class AsyncBacktestEngine(BacktestEngine):
         await self.event_bus.emit(TradingDayStartEvent(date=trade_day))
         
         market_periods = get_market_periods()
-        schedule_map = generate_daily_schedule(trade_day, getattr(self.context, "previous_date", None), market_periods)
+        resolver = lambda _ref=None: market_periods
+        schedule_map = generate_daily_schedule(
+            trade_day,
+            trade_calendar=self._trade_calendar,
+            market_periods_resolver=resolver,
+        )
+        async_schedule_map: Dict[datetime, List[Any]] = {}
+        if self.async_scheduler:
+            async_schedule_map = generate_daily_schedule(
+                trade_day,
+                trade_calendar=self._trade_calendar,
+                market_periods_resolver=resolver,
+                tasks=self.async_scheduler.get_all_tasks(),
+            )
+            self.async_scheduler.preload_schedule(trade_day.date(), async_schedule_map)
         day_date = trade_day.date()
         open_dt = datetime.combine(day_date, market_periods[0][0])
         close_dt = datetime.combine(day_date, market_periods[-1][1])
         pre_open_dt = open_dt - PRE_MARKET_OFFSET
         
-        timeline_set = set(schedule_map.keys())
+        timeline_set = set(schedule_map.keys()) | set(async_schedule_map.keys())
         timeline_set.add(pre_open_dt)
         timeline_set.add(open_dt)
         timeline_set.add(close_dt)

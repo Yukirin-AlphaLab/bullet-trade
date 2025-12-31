@@ -9,7 +9,7 @@ import inspect as _inspect
 import sys
 import re
 from typing import Dict, Any, Callable, Optional, List, Sequence, Tuple
-from datetime import datetime, timedelta, time as Time
+from datetime import datetime, timedelta, time as Time, date
 import pandas as pd
 import numpy as np
 import time
@@ -29,6 +29,8 @@ from .scheduler import (
     generate_daily_schedule,
     get_market_periods,
     get_tasks,
+    get_trade_calendar,
+    set_trade_calendar,
     unschedule_all,
 )
 from ..data.api import (
@@ -123,6 +125,7 @@ class BacktestEngine:
         self.start_total_value: Optional[float] = None
         # 新增：回测运行耗时（秒）
         self.runtime_seconds: Optional[float] = None
+        self._trade_calendar: Dict[date, Dict[str, Any]] = {}
         market_cfg = get_live_trade_config()
         self._market_buy_percent = float(market_cfg.get('market_buy_price_percent', _DEFAULT_MARKET_BUY_PERCENT))
         self._market_sell_percent = float(market_cfg.get('market_sell_price_percent', _DEFAULT_MARKET_SELL_PERCENT))
@@ -553,6 +556,19 @@ class BacktestEngine:
             end_date=self.end_date
         )
         trade_days = [pd.to_datetime(d) for d in trade_days]
+        calendar_days: List[date] = [d.date() for d in trade_days]
+        try:
+            extra_days = provider.get_trade_days(
+                end_date=trade_days[0] if trade_days else None,
+                count=60
+            ) or []
+            calendar_days.extend(pd.to_datetime(d).date() for d in extra_days)
+        except Exception as exc:
+            log.debug(f"扩展交易日序列失败: {exc}")
+        if trade_days:
+            start_day = pd.to_datetime(self.start_date or trade_days[0]).date()
+            set_trade_calendar(calendar_days, start_day)
+            self._trade_calendar = get_trade_calendar()
         
         log.info(f"交易日数量: {len(trade_days)}")
         
@@ -745,8 +761,12 @@ class BacktestEngine:
         if not market_periods:
             raise ValueError("交易时段配置不能为空")
 
-        previous_trade_day = getattr(self.context, "previous_date", None)
-        schedule_map = generate_daily_schedule(trade_day, previous_trade_day, market_periods)
+        resolver = lambda _ref=None: market_periods
+        schedule_map = generate_daily_schedule(
+            trade_day,
+            trade_calendar=self._trade_calendar,
+            market_periods_resolver=resolver,
+        )
 
         day_date = trade_day.date()
         open_dt = datetime.combine(day_date, market_periods[0][0])

@@ -12,7 +12,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as Time, timedelta
 from enum import Enum
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Any
 
 from .settings import get_settings
 
@@ -318,6 +318,8 @@ class ScheduleTask:
     weekday: Optional[int] = None
     monthday: Optional[int] = None
     expression: Optional[TimeExpression] = None
+    reference_security: Optional[str] = None
+    force: bool = True
     last_trigger_marker: Optional[Tuple[int, int]] = field(default=None, repr=False)
 
     def should_run(self, current_dt: datetime, is_bar: bool = False) -> bool:
@@ -326,6 +328,7 @@ class ScheduleTask:
 
 # 全局任务列表
 _tasks: List[ScheduleTask] = []
+_trade_calendar: Dict[date, Dict[str, Any]] = {}
 
 
 def _effective_aliases() -> Dict[str, str]:
@@ -356,15 +359,25 @@ def run_daily(func: Callable, time: str = 'every_bar'):
     _tasks.append(task)
 
 
-def run_weekly(func: Callable, weekday: int, time: str = '09:30'):
+def run_weekly(
+    func: Callable,
+    weekday: int,
+    time: str = '09:30',
+    reference_security: Optional[str] = None,
+    force: bool = True,
+):
     """
-    每周运行
+    每周运行（交易日序号语义）
     
     Args:
         func: 要执行的函数
-        weekday: 星期几（0=周一, 1=周二, ..., 6=周日）
-        time: 执行时间，格式 'HH:MM'
+        weekday: 当周第 N 个交易日（支持负数，-1 为最后一个交易日）
+        time: 执行时间，格式 'HH:MM' 或 open/close 偏移
+        reference_security: 参考标的（决定交易日/时段，未提供时使用默认）
+        force: 是否从回测/策略起始日作为第一个交易日起算（默认 True）
     """
+    if not isinstance(weekday, int) or weekday == 0:
+        raise ValueError("weekday 必须为非零整数，表示交易日序号（正序/倒序）")
     aliases = _effective_aliases()
     expression = TimeExpression.parse(time, aliases)
     task = ScheduleTask(
@@ -373,19 +386,31 @@ def run_weekly(func: Callable, weekday: int, time: str = '09:30'):
         time=time,
         weekday=weekday,
         expression=expression,
+        reference_security=reference_security,
+        force=bool(force),
     )
     _tasks.append(task)
 
 
-def run_monthly(func: Callable, monthday: int, time: str = '09:30'):
+def run_monthly(
+    func: Callable,
+    monthday: int,
+    time: str = '09:30',
+    reference_security: Optional[str] = None,
+    force: bool = True,
+):
     """
-    每月运行
+    每月运行（交易日序号语义）
     
     Args:
         func: 要执行的函数
-        monthday: 每月几号（1-31）
-        time: 执行时间，格式 'HH:MM'
+        monthday: 当月第 N 个交易日（支持负数，-1 为最后一个交易日）
+        time: 执行时间，格式 'HH:MM' 或 open/close 偏移
+        reference_security: 参考标的（决定交易日/时段，未提供时使用默认）
+        force: 是否从回测/策略起始日作为第一个交易日起算（默认 True）
     """
+    if not isinstance(monthday, int) or monthday == 0:
+        raise ValueError("monthday 必须为非零整数，表示交易日序号（正序/倒序）")
     aliases = _effective_aliases()
     expression = TimeExpression.parse(time, aliases)
     task = ScheduleTask(
@@ -394,6 +419,8 @@ def run_monthly(func: Callable, monthday: int, time: str = '09:30'):
         time=time,
         monthday=monthday,
         expression=expression,
+        reference_security=reference_security,
+        force=bool(force),
     )
     _tasks.append(task)
 
@@ -409,45 +436,221 @@ def get_tasks() -> List[ScheduleTask]:
     return _tasks
 
 
-def _should_trigger_monthly(task: ScheduleTask, current_date: date, previous_trade_day: Optional[date]) -> bool:
-    if task.monthday is None:
+def _normalize_trade_days(trade_days: Sequence[date]) -> List[date]:
+    uniq = sorted({d for d in trade_days})
+    return uniq
+
+
+def _finalize_negative_indexes(days: List[date], calendar: Dict[date, Dict[str, Any]], neg_key: str, total_key: str) -> None:
+    total = len(days)
+    for idx, d in enumerate(days):
+        calendar[d][neg_key] = idx - total
+        calendar[d][total_key] = total
+
+
+def _build_trade_calendar(trade_days: Sequence[date], start_date: date) -> Dict[date, Dict[str, Any]]:
+    """
+    构建交易日序号日历，包含周/月正序与倒序索引，以及 force 起算序号。
+    """
+    normalized = _normalize_trade_days(trade_days)
+    if not normalized:
+        return {}
+
+    first, last = normalized[0], normalized[-1]
+    all_days = set(normalized)
+    calendar: Dict[date, Dict[str, Any]] = {}
+
+    week_days: List[date] = []
+    month_days: List[date] = []
+    week_force_days: List[date] = []
+    month_force_days: List[date] = []
+    tweekday = tmonthday = 0
+    tweekday_force = tmonthday_force = None
+    tweekday_force_stop = False
+    tmonthday_force_stop = False
+
+    current = first
+    while current <= last:
+        # 周一切分并收尾上一周索引
+        if current.isoweekday() == 1:
+            _finalize_negative_indexes(week_days, calendar, "tweekday_negative", "week_tdays")
+            week_days = []
+            if not tweekday_force_stop:
+                _finalize_negative_indexes(
+                    week_force_days, calendar, "tweekday_negative_force", "week_tdays_force"
+                )
+                week_force_days = []
+                if current >= start_date:
+                    tweekday_force_stop = True
+            tweekday = 0
+
+        # 月初切分并收尾上一月索引
+        if current.day == 1:
+            _finalize_negative_indexes(month_days, calendar, "tmonthday_negative", "month_tdays")
+            month_days = []
+            if not tmonthday_force_stop:
+                _finalize_negative_indexes(
+                    month_force_days, calendar, "tmonthday_negative_force", "month_tdays_force"
+                )
+                month_force_days = []
+                if current >= start_date:
+                    tmonthday_force_stop = True
+            tmonthday = 0
+
+        if current in all_days:
+            week_days.append(current)
+            month_days.append(current)
+            tweekday += 1
+            tmonthday += 1
+
+            calendar[current] = {
+                "tweekday": tweekday,
+                "tmonthday": tmonthday,
+            }
+
+            if not tweekday_force_stop:
+                if current >= start_date:
+                    tweekday_force = 1 if tweekday_force is None else tweekday_force + 1
+                calendar[current]["tweekday_force"] = tweekday_force
+                if tweekday_force is not None:
+                    week_force_days.append(current)
+
+            if not tmonthday_force_stop:
+                if current >= start_date:
+                    tmonthday_force = 1 if tmonthday_force is None else tmonthday_force + 1
+                calendar[current]["tmonthday_force"] = tmonthday_force
+                if tmonthday_force is not None:
+                    month_force_days.append(current)
+
+        current = current + timedelta(days=1)
+
+    # 收尾最后一周/一月
+    _finalize_negative_indexes(week_days, calendar, "tweekday_negative", "week_tdays")
+    _finalize_negative_indexes(month_days, calendar, "tmonthday_negative", "month_tdays")
+    if not tweekday_force_stop:
+        _finalize_negative_indexes(
+            week_force_days, calendar, "tweekday_negative_force", "week_tdays_force"
+        )
+    if not tmonthday_force_stop:
+        _finalize_negative_indexes(
+            month_force_days, calendar, "tmonthday_negative_force", "month_tdays_force"
+        )
+
+    return calendar
+
+
+def set_trade_calendar(trade_days: Sequence[date], start_date: date) -> None:
+    """
+    设置全局交易日序号日历，供调度解析使用。
+    """
+    global _trade_calendar
+    _trade_calendar = _build_trade_calendar(trade_days, start_date)
+
+
+def get_trade_calendar() -> Dict[date, Dict[str, Any]]:
+    """返回已缓存的交易日序号日历。"""
+    return _trade_calendar
+
+
+def _resolve_market_periods_for_security(reference_security: Optional[str]) -> List[Tuple[Time, Time]]:
+    """
+    根据参考标的获取交易时段。
+    当前实现使用全局设置，预留 reference_security 扩展。
+    """
+    _ = reference_security
+    return get_market_periods()
+
+
+def _pick_force_value(info: Dict[str, Any], normal_key: str, force_key: str, force: bool) -> Any:
+    if not force:
+        return info.get(normal_key)
+    return info.get(force_key) if info.get(force_key) is not None else info.get(normal_key)
+
+
+def _should_trigger_weekly(info: Dict[str, Any], weekday: int, force: bool) -> bool:
+    if weekday == 0:
         return False
-    monthday = task.monthday
-    if monthday < 1 or monthday > 31:
+    week_total = _pick_force_value(info, "week_tdays", "week_tdays_force", force)
+    if not week_total:
         return False
-    if current_date.day < monthday:
+    tweekday = _pick_force_value(info, "tweekday", "tweekday_force", force)
+    tweekday_neg = _pick_force_value(info, "tweekday_negative", "tweekday_negative_force", force)
+    if tweekday is None or tweekday_neg is None:
         return False
-    marker = (current_date.year, current_date.month)
-    if task.last_trigger_marker == marker:
+    if weekday > 0:
+        if weekday > week_total:
+            return force and tweekday == week_total
+        return tweekday == weekday
+    abs_idx = abs(weekday)
+    if abs_idx > week_total:
+        return force and abs(tweekday_neg) == week_total
+    return tweekday_neg == weekday
+
+
+def _should_trigger_monthly(info: Dict[str, Any], monthday: int, force: bool) -> bool:
+    if monthday == 0:
         return False
-    if previous_trade_day and previous_trade_day.month == current_date.month and previous_trade_day.day >= monthday:
+    month_total = _pick_force_value(info, "month_tdays", "month_tdays_force", force)
+    if not month_total:
         return False
-    task.last_trigger_marker = marker
-    return True
+    tmonthday = _pick_force_value(info, "tmonthday", "tmonthday_force", force)
+    tmonthday_neg = _pick_force_value(info, "tmonthday_negative", "tmonthday_negative_force", force)
+    if tmonthday is None or tmonthday_neg is None:
+        return False
+    if monthday > 0:
+        if monthday > month_total:
+            return force and tmonthday == month_total
+        return tmonthday == monthday
+    abs_idx = abs(monthday)
+    if abs_idx > month_total:
+        return force and abs(tmonthday_neg) == month_total
+    return tmonthday_neg == monthday
 
 
 def generate_daily_schedule(
     trade_day: datetime,
-    previous_trade_day: Optional[date],
-    market_periods: Sequence[Tuple[Time, Time]],
-) -> Dict[datetime, List[ScheduleTask]]:
+    trade_calendar: Optional[Dict[date, Dict[str, Any]]] = None,
+    market_periods_resolver: Optional[Callable[[Optional[str]], Sequence[Tuple[Time, Time]]]] = None,
+    tasks: Optional[Sequence[Any]] = None,
+) -> Dict[datetime, List[Any]]:
     """
     生成指定交易日的任务时间表。
     返回 dict，键为 datetime，值为在该时间需要执行的任务列表。
     """
-    schedule: Dict[datetime, List[ScheduleTask]] = defaultdict(list)
-    for task in _tasks:
-        if not task.expression:
+    schedule: Dict[datetime, List[Any]] = defaultdict(list)
+    calendar = trade_calendar or _trade_calendar or {}
+    resolver = market_periods_resolver or _resolve_market_periods_for_security
+    target_date = trade_day.date()
+    day_info = calendar.get(target_date)
+    if day_info is None:
+        # 回退：若未提供日历，视为单一交易日且序号为 1
+        calendar = _build_trade_calendar([target_date], target_date)
+        day_info = calendar.get(target_date)
+
+    task_list = list(tasks) if tasks is not None else _tasks
+    for task in task_list:
+        if getattr(task, "enabled", True) is False:
+            continue
+        if not getattr(task, "expression", None):
             continue
 
-        if task.schedule_type == ScheduleType.DAILY:
+        ref_security = getattr(task, "reference_security", None)
+        market_periods = resolver(ref_security)
+        if not market_periods:
+            continue
+
+        stype = getattr(task, "schedule_type", None)
+        stype_value = getattr(stype, "value", stype)
+        if stype_value == ScheduleType.DAILY.value:
             times = task.expression.resolve(trade_day, market_periods)
-        elif task.schedule_type == ScheduleType.WEEKLY:
-            if task.weekday is None or trade_day.weekday() != task.weekday:
+        elif stype_value == ScheduleType.WEEKLY.value:
+            weekday = getattr(task, "weekday", None)
+            if weekday is None or not _should_trigger_weekly(day_info, weekday, getattr(task, "force", True)):
                 continue
             times = task.expression.resolve(trade_day, market_periods)
-        elif task.schedule_type == ScheduleType.MONTHLY:
-            if not _should_trigger_monthly(task, trade_day.date(), previous_trade_day):
+        elif stype_value == ScheduleType.MONTHLY.value:
+            monthday = getattr(task, "monthday", None)
+            if monthday is None or not _should_trigger_monthly(day_info, monthday, getattr(task, "force", True)):
                 continue
             times = task.expression.resolve(trade_day, market_periods)
         else:
@@ -464,8 +667,7 @@ def get_tasks_to_run(current_dt: datetime, is_bar: bool = False) -> List[Schedul
     兼容旧接口：根据当前时间返回需要执行的任务。
     新逻辑建议使用 `generate_daily_schedule`。
     """
-    market_periods = get_market_periods()
-    schedule = generate_daily_schedule(current_dt, None, market_periods)
+    schedule = generate_daily_schedule(current_dt)
     tasks = schedule.get(current_dt, [])
     if is_bar and not tasks:
         return [task for task in _tasks if task.time == "every_bar"]
@@ -475,5 +677,6 @@ def get_tasks_to_run(current_dt: datetime, is_bar: bool = False) -> List[Schedul
 __all__ = [
     'run_daily', 'run_weekly', 'run_monthly', 'unschedule_all',
     'get_tasks', 'get_tasks_to_run', 'ScheduleTask', 'generate_daily_schedule',
-    'TimeExpression', 'get_market_periods', 'get_time_aliases'
+    'TimeExpression', 'get_market_periods', 'get_time_aliases',
+    'set_trade_calendar', 'get_trade_calendar'
 ]

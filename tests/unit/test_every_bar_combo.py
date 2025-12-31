@@ -10,7 +10,7 @@
 """
 import datetime as dt
 from datetime import time
-from typing import Optional
+from typing import List, Optional
 
 import pytest
 
@@ -21,6 +21,8 @@ from bullet_trade.core.scheduler import (
     run_daily,
     run_monthly,
     run_weekly,
+    get_trade_calendar,
+    set_trade_calendar,
     unschedule_all,
 )
 from bullet_trade.core.settings import get_settings, set_option
@@ -30,16 +32,25 @@ from bullet_trade.core.settings import get_settings, set_option
 def reset_scheduler_and_settings():
     """每个测试前后重置调度器和设置"""
     unschedule_all()
+    set_trade_calendar([], dt.date.today())
     original_frequency = get_settings().options.get('backtest_frequency', 'day')
     yield
     unschedule_all()
+    set_trade_calendar([], dt.date.today())
     set_option('backtest_frequency', original_frequency)
 
 
-def _build_schedule(day: dt.datetime, previous_day: Optional[dt.date] = None):
+def _build_schedule(
+    day: dt.datetime,
+    calendar_days: Optional[List[dt.date]] = None,
+    start_date: Optional[dt.date] = None,
+):
     """构建指定日期的调度表"""
     periods = get_market_periods()
-    return generate_daily_schedule(day, previous_day, periods)
+    calendar_days = calendar_days or [day.date()]
+    start = start_date or calendar_days[0]
+    set_trade_calendar(calendar_days, start)
+    return generate_daily_schedule(day, get_trade_calendar(), lambda _ref=None: periods)
 
 
 class TestEveryBarMinuteFrequency:
@@ -149,14 +160,21 @@ class TestPeriodicTriggers:
         set_option('backtest_frequency', 'minute')
         
         # 注册周三 10:00 任务
-        run_weekly(lambda ctx: None, weekday=2, time='10:00')  # weekday=2 表示周三
+        run_weekly(lambda ctx: None, weekday=3, time='10:00')  # 当周第 3 个交易日
+        calendar_days = [
+            dt.date(2025, 6, 2),
+            dt.date(2025, 6, 3),
+            dt.date(2025, 6, 4),
+            dt.date(2025, 6, 5),
+            dt.date(2025, 6, 6),
+        ]
         
         # 测试几个不同的日期
         wednesday = dt.datetime(2025, 6, 4)  # 2025-06-04 是周三
         tuesday = dt.datetime(2025, 6, 3)    # 2025-06-03 是周二
         
-        schedule_wed = _build_schedule(wednesday)
-        schedule_tue = _build_schedule(tuesday)
+        schedule_wed = _build_schedule(wednesday, calendar_days)
+        schedule_tue = _build_schedule(tuesday, calendar_days)
         
         expected_wed = dt.datetime(2025, 6, 4, 10, 0)
         expected_tue = dt.datetime(2025, 6, 3, 10, 0)
@@ -172,21 +190,31 @@ class TestPeriodicTriggers:
         
         # 注册每月 1 号 11:00 任务
         run_monthly(lambda ctx: None, monthday=1, time='11:00')
+        calendar_days = [
+            dt.date(2025, 6, 2),
+            dt.date(2025, 6, 3),
+            dt.date(2025, 7, 1),
+            dt.date(2025, 7, 2),
+        ]
         
         # 测试 2025 年 6 月和 7 月的首个交易日
         # 假设 6月1日（周日）顺延到 6月2日（周一）
         june_first_trade_day = dt.datetime(2025, 6, 2)  # 周一
         june_second_day = dt.datetime(2025, 6, 3)       # 周二
+        july_first_trade_day = dt.datetime(2025, 7, 1)
         
         # 第一次调用：6月2日触发
-        schedule_june_2 = _build_schedule(june_first_trade_day, None)
+        schedule_june_2 = _build_schedule(june_first_trade_day, calendar_days)
         expected_june_2 = dt.datetime(2025, 6, 2, 11, 0)
         assert expected_june_2 in schedule_june_2
         
         # 第二次调用：6月3日不应触发（因为已经在6月2日触发过）
-        schedule_june_3 = _build_schedule(june_second_day, june_first_trade_day.date())
+        schedule_june_3 = _build_schedule(june_second_day, calendar_days)
         expected_june_3 = dt.datetime(2025, 6, 3, 11, 0)
         assert expected_june_3 not in schedule_june_3
+        schedule_july_1 = _build_schedule(july_first_trade_day, calendar_days, start_date=calendar_days[0])
+        expected_july_1 = dt.datetime(2025, 7, 1, 11, 0)
+        assert expected_july_1 in schedule_july_1
 
 
 class TestTimeExpressionResolve:
@@ -239,4 +267,3 @@ class TestTimeExpressionResolve:
         assert len(times_day) == 240
         assert len(times_minute) == 240
         assert times_day == times_minute
-

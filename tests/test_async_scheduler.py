@@ -20,9 +20,16 @@ from bullet_trade.core.async_scheduler import (
     get_scheduler,
     reset_scheduler,
 )
+from bullet_trade.core.scheduler import get_trade_calendar, set_trade_calendar
 
 
 # ============ 基础功能测试 ============
+
+@pytest.fixture(autouse=True)
+def reset_trade_calendar():
+    set_trade_calendar([], datetime.now().date())
+    yield
+    set_trade_calendar([], datetime.now().date())
 
 def test_scheduler_creation():
     """测试调度器创建"""
@@ -63,8 +70,15 @@ async def test_run_weekly():
     def weekly_task(value):
         results.append(value)
     
-    # 注册任务（周一）
-    scheduler.run_weekly(weekly_task, 0, '10:00')
+    # 注册任务（当周第 1 个交易日）
+    scheduler.run_weekly(weekly_task, 1, '10:00')
+    calendar_days = [
+        datetime(2024, 1, 15).date(),
+        datetime(2024, 1, 16).date(),
+        datetime(2024, 1, 17).date(),
+    ]
+    set_trade_calendar(calendar_days, calendar_days[0])
+    scheduler.set_trade_calendar(get_trade_calendar())
     
     # 周一应该执行
     monday = datetime(2024, 1, 15, 10, 0)  # 2024-01-15 是周一
@@ -91,6 +105,13 @@ async def test_run_monthly():
     
     # 注册任务（每月1号）
     scheduler.run_monthly(monthly_task, 1, '15:00')
+    calendar_days = [
+        datetime(2024, 1, 1).date(),
+        datetime(2024, 1, 2).date(),
+        datetime(2024, 1, 3).date(),
+    ]
+    set_trade_calendar(calendar_days, calendar_days[0])
+    scheduler.set_trade_calendar(get_trade_calendar())
     
     # 1号应该执行
     first_day = datetime(2024, 1, 1, 15, 0)
@@ -380,4 +401,3 @@ if __name__ == "__main__":
     print("  ✅ CONCURRENT 策略：允许并发，需自行处理竞态")
     print("  ✅ 同步异步混合：引擎自动适配")
     print("  ✅ 任务管理：注册/取消/启用/禁用")
-

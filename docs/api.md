@@ -35,8 +35,8 @@
 ## 调度与时间表达式 {#schedule}
 支持与聚宽一致的定时接口，时间表达式已扩展了常用别名：
 - `run_daily(func, time='every_bar')`：日调度。`every_bar` 在分钟回测每分钟执行，在日回测只在开盘触发；`every_minute` 强制每分钟；`'HH:MM'`/`'HH:MM:SS'` 为指定时刻；相对表达式 `open`/`open-30m`/`close+10s`；内置别名 `before_open=open-30m`、`after_close=close+30m`、`morning=08:00`、`night=20:00`。
-- `run_weekly(func, weekday, time='09:30')`：`weekday` 0-6（周一-周日），时间表达式同上。
-- `run_monthly(func, monthday, time='09:30')`：每月固定日运行；若当月该日非交易日则顺延到后一个交易日首次触发。
+- `run_weekly(func, weekday, time='09:30', reference_security=None, force=True)`：`weekday` 表示当周第 N 个交易日（支持负数，-1 为最后一个交易日）；`force=True` 时以回测/策略起始日为第 1 个交易日补跑首周，`force=False` 则从自然周第一个交易日起算，过期不补；`reference_security` 影响交易日/交易时段判定。
+- `run_monthly(func, monthday, time='09:30', reference_security=None, force=True)`：`monthday` 表示当月第 N 个交易日（支持负数，-1 为最后一个交易日）；`force=True` 超界时就近取当月最后一个交易日，`force=False` 则跳过。
 - `unschedule_all()`：清空所有已注册任务。
 - 差异提示：`every_bar` 在日频回测只触发一次（开盘），与聚宽相同；我们额外允许通过 `.env` 或 `set_option('time_aliases', {...})` 覆写别名。
 

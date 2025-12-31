@@ -15,7 +15,13 @@ from enum import Enum
 import inspect
 import traceback
 
-from .scheduler import TimeExpression, get_market_periods, get_time_aliases
+from .scheduler import (
+    TimeExpression,
+    generate_daily_schedule,
+    get_market_periods,
+    get_time_aliases,
+    get_trade_calendar,
+)
 from .globals import log
 
 
@@ -66,6 +72,8 @@ class AsyncScheduleTask:
     expression: Optional[TimeExpression] = None
     weekday: Optional[int] = None
     monthday: Optional[int] = None
+    reference_security: Optional[str] = None
+    force: bool = True
     overlap_strategy: OverlapStrategy = OverlapStrategy.SKIP
     enabled: bool = True
     task_id: str = field(default_factory=lambda: '')
@@ -285,6 +293,12 @@ class AsyncScheduler:
         """初始化调度器"""
         self._tasks: List[AsyncScheduleTask] = []
         self._task_map: Dict[str, AsyncScheduleTask] = {}
+        self._schedule_cache: Dict[datetime, List[AsyncScheduleTask]] = {}
+        self._schedule_cache_date: Optional[date] = None
+        self._trade_calendar: Optional[Dict[date, Dict[str, Any]]] = None
+        self._market_periods_resolver: Optional[
+            Callable[[Optional[str]], Sequence[Tuple[Time, Time]]]
+        ] = None
     
     def run_daily(
         self,
@@ -332,6 +346,8 @@ class AsyncScheduler:
         func: Callable,
         weekday: int,
         time: str = 'open',
+        reference_security: Optional[str] = None,
+        force: bool = True,
         overlap_strategy: OverlapStrategy = OverlapStrategy.SKIP
     ) -> str:
         """
@@ -339,16 +355,20 @@ class AsyncScheduler:
         
         Args:
             func: 要执行的函数
-            weekday: 星期几（0=周一, 6=周日）
+            weekday: 当周第 N 个交易日（支持负数，-1 为最后一个交易日）
             time: 执行时间
+            reference_security: 参考标的（决定交易日/时段）
+            force: 是否从策略起始日作为第一个交易日起算
             overlap_strategy: 重叠执行策略
         
         Returns:
             任务ID
         
         Example:
-            >>> scheduler.run_weekly(rebalance, 0, '09:30')  # 每周一09:30
+            >>> scheduler.run_weekly(rebalance, 1, '09:30')  # 每周第1个交易日 09:30
         """
+        if not isinstance(weekday, int) or weekday == 0:
+            raise ValueError("weekday 必须为非零整数，表示交易日序号（正序/倒序）")
         expression = TimeExpression.parse(time, get_time_aliases())
         task = AsyncScheduleTask(
             func=func,
@@ -356,6 +376,8 @@ class AsyncScheduler:
             time=time,
             expression=expression,
             weekday=weekday,
+            reference_security=reference_security,
+            force=bool(force),
             overlap_strategy=overlap_strategy
         )
         
@@ -366,6 +388,8 @@ class AsyncScheduler:
         func: Callable,
         monthday: int,
         time: str = 'open',
+        reference_security: Optional[str] = None,
+        force: bool = True,
         overlap_strategy: OverlapStrategy = OverlapStrategy.SKIP
     ) -> str:
         """
@@ -373,16 +397,20 @@ class AsyncScheduler:
         
         Args:
             func: 要执行的函数
-            monthday: 每月几号（1-31）
+            monthday: 当月第 N 个交易日（支持负数，-1 为最后一个交易日）
             time: 执行时间
+            reference_security: 参考标的（决定交易日/时段）
+            force: 是否从策略起始日作为第一个交易日起算
             overlap_strategy: 重叠执行策略
         
         Returns:
             任务ID
         
         Example:
-            >>> scheduler.run_monthly(monthly_report, 1, '15:00')  # 每月1号15:00
+            >>> scheduler.run_monthly(monthly_report, 1, '15:00')  # 每月第1个交易日 15:00
         """
+        if not isinstance(monthday, int) or monthday == 0:
+            raise ValueError("monthday 必须为非零整数，表示交易日序号（正序/倒序）")
         expression = TimeExpression.parse(time, get_time_aliases())
         task = AsyncScheduleTask(
             func=func,
@@ -390,6 +418,8 @@ class AsyncScheduler:
             time=time,
             expression=expression,
             monthday=monthday,
+            reference_security=reference_security,
+            force=bool(force),
             overlap_strategy=overlap_strategy
         )
         
@@ -448,12 +478,16 @@ class AsyncScheduler:
         if task_id in self._task_map:
             self._task_map[task_id].enabled = True
             logger.info(f"✅ 启用任务: {task_id}")
+            self._schedule_cache_date = None
+            self._schedule_cache = {}
     
     def disable_task(self, task_id: str):
         """禁用任务"""
         if task_id in self._task_map:
             self._task_map[task_id].enabled = False
             logger.info(f"🔇 禁用任务: {task_id}")
+            self._schedule_cache_date = None
+            self._schedule_cache = {}
     
     async def trigger(
         self,
@@ -477,15 +511,19 @@ class AsyncScheduler:
             执行结果字典 {task_id: result}
         """
         results = {}
-        market_periods = get_market_periods()
-        context = args[0] if args else None
-        previous_trade_day = getattr(context, "previous_date", None) if context is not None else None
+        trade_day_date = current_dt.date()
+        if self._schedule_cache_date != trade_day_date:
+            calendar = self._trade_calendar or get_trade_calendar()
+            resolver = self._market_periods_resolver
+            self._schedule_cache = generate_daily_schedule(
+                current_dt,
+                trade_calendar=calendar,
+                market_periods_resolver=resolver,
+                tasks=self._tasks,
+            )
+            self._schedule_cache_date = trade_day_date
         
-        # 找出需要执行的任务
-        tasks_to_run = [
-            task for task in self._tasks
-            if task.should_run(current_dt, is_bar, market_periods, previous_trade_day)
-        ]
+        tasks_to_run = self._schedule_cache.get(current_dt, [])
         
         if not tasks_to_run:
             return results
@@ -516,6 +554,21 @@ class AsyncScheduler:
         
         return results
     
+    def preload_schedule(self, trade_day: date, schedule_map: Dict[datetime, List[AsyncScheduleTask]]) -> None:
+        """预加载当日调度时间表（供回测引擎复用）。"""
+        self._schedule_cache_date = trade_day
+        self._schedule_cache = schedule_map or {}
+
+    def set_trade_calendar(self, calendar: Optional[Dict[date, Dict[str, Any]]]) -> None:
+        """设置交易日序号日历（对齐同步调度）。"""
+        self._trade_calendar = calendar
+
+    def set_market_periods_resolver(
+        self, resolver: Optional[Callable[[Optional[str]], Sequence[Tuple[Time, Time]]]]
+    ) -> None:
+        """设置参考标的交易时段解析函数。"""
+        self._market_periods_resolver = resolver
+
     def get_task(self, task_id: str) -> Optional[AsyncScheduleTask]:
         """获取任务"""
         return self._task_map.get(task_id)
